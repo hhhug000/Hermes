@@ -23,3 +23,6 @@ go.work.sum
 
 # env file
 .env
+
+term_host_key
+term_host_key.pub
