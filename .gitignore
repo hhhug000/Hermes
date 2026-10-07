@@ -26,3 +26,5 @@ go.work.sum
 
 term_host_key
 term_host_key.pub
+
+hermes.db

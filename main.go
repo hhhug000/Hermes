@@ -14,6 +14,10 @@ import (
 )
 
 func main() {
+	if err := InitDB(); err != nil {
+		log.Fatalf("Failed to initialize database: %v", err)
+	}
+
 	s, err := wish.NewServer(
 		wish.WithAddress("0.0.0.0:2222"),
 		wish.WithHostKeyPath("term_host_key"),
@@ -23,12 +27,19 @@ func main() {
 		wish.WithMiddleware(
 			wishbubble.Middleware(func(s charmssh.Session) (tea.Model, []tea.ProgramOption) {
 				pubKey := s.PublicKey()
+				var fingerprint string
+				var username string
+
 				if pubKey != nil {
-					fingerprint := cryptossh.FingerprintSHA256(pubKey)
-					log.Printf("Authenticated user fingerprint: %s", fingerprint)
+					fingerprint = cryptossh.FingerprintSHA256(pubKey)
+					var err error
+					username, err = GetUsername(fingerprint)
+					if err != nil {
+						log.Printf("DB error looking up fingerprint: %v", err)
+					}
 				}
 
-				m := InitialModel()
+				m := initialModel(fingerprint, username)
 				return m, []tea.ProgramOption{tea.WithAltScreen()}
 			}),
 		),
