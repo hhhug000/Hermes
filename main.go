@@ -1,14 +1,15 @@
 package main
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"os/signal"
 	"syscall"
 
+	tea "github.com/charmbracelet/bubbletea"
 	charmssh "github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
+	wishbubble "github.com/charmbracelet/wish/bubbletea"
 	cryptossh "golang.org/x/crypto/ssh"
 )
 
@@ -20,26 +21,23 @@ func main() {
 			return true
 		}),
 		wish.WithMiddleware(
-			func(next charmssh.Handler) charmssh.Handler {
-				return func(s charmssh.Session) {
-					pubKey := s.PublicKey()
-					if pubKey == nil {
-						fmt.Fprintln(s, "No public key, anonymous user")
-						_ = s.Exit(0)
-						return
-					}
-
+			wishbubble.Middleware(func(s charmssh.Session) (tea.Model, []tea.ProgramOption) {
+				pubKey := s.PublicKey()
+				if pubKey != nil {
 					fingerprint := cryptossh.FingerprintSHA256(pubKey)
-					log.Printf("key found, fingerprint is %s", fingerprint)
-					_ = s.Exit(0)
+					log.Printf("Authenticated user fingerprint: %s", fingerprint)
 				}
-			},
+
+				m := InitialModel()
+				return m, []tea.ProgramOption{tea.WithAltScreen()}
+			}),
 		),
 	)
 
 	if err != nil {
 		log.Fatalf("could not start server: %s", err)
 	}
+
 	done := make(chan os.Signal, 1)
 	signal.Notify(done, os.Interrupt, syscall.SIGTERM)
 
@@ -49,6 +47,7 @@ func main() {
 			log.Fatalf("Server error: %v", err)
 		}
 	}()
+
 	<-done
 	log.Println("Hermes shutting down...")
 	_ = s.Close()
