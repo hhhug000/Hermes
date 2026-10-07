@@ -16,6 +16,9 @@ func main() {
 	s, err := wish.NewServer(
 		wish.WithAddress("0.0.0.0:2222"),
 		wish.WithHostKeyPath("term_host_key"),
+		wish.WithPublicKeyAuth(func(ctx charmssh.Context, key charmssh.PublicKey) bool {
+			return true
+		}),
 		wish.WithMiddleware(
 			func(next charmssh.Handler) charmssh.Handler {
 				return func(s charmssh.Session) {
