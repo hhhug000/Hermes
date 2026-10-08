@@ -1,10 +1,12 @@
 package main
 
 import (
+	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
+	"github.com/google/uuid"
 )
 
 // Bubbletea makes you use a model struct for the tui state
@@ -78,12 +80,47 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 
 				m.username = val
 				m.isRegistered = true
+				m.state = "dashboard"
 				m.errMessage = ""
+			} else if m.state == "dashboard" {
+				fileUsers, err := GetAllUsers()
+				if err == nil {
+					m.allUsers = fileUsers
+				}
+				m.currentFileId = uuid.New().String()
+				m.currentFilename = "example.txt"
+				m.selectedUsers = make(map[string]bool)
+				m.cursor = 0
+				m.state = "share_picker"
+			} else if m.state == "share_picker" {
+				storagePath := fmt.Sprintf("./storage/%s", m.currentFileId)
+				_ = SaveFileRecord(m.currentFileId, m.currentFilename, m.fingerprint, storagePath)
+
+				for u, allowed := range m.selectedUsers {
+					if allowed {
+						_ = GrantAccess(m.currentFileId, u)
+					}
+				}
+				m.state = "dashboard"
+			}
+
+		case "up", "k":
+			if m.state == "share_picker" && m.cursor > 0 {
+				m.cursor--
+			}
+		case "down", "j":
+			if m.state == "share_picker" && m.cursor < len(m.allUsers)-1 {
+				m.cursor++
+			}
+		case " ":
+			if m.state == "share_picker" && len(m.allUsers) > 0 {
+				targetUser := m.allUsers[m.cursor]
+				m.selectedUsers[targetUser] = !m.selectedUsers[targetUser]
 			}
 		}
 	}
 
-	if !m.isRegistered {
+	if !m.isRegistered && m.state == "register" {
 		m.textInput, cmd = m.textInput.Update(msg)
 	}
 
@@ -96,19 +133,30 @@ func (m model) View() string {
 
 	s.WriteString("\n  Hermes file sharing\n\n")
 
-	if m.fingerprint == "" {
-		s.WriteString("  Hello anonymous (No SSH key provided)\n")
-	} else if m.isRegistered {
-		s.WriteString("  Hello " + m.username + "!\n")
-		s.WriteString("  [todo add file sharing stuff]\n")
-	} else {
-		s.WriteString("  Hello anonymous! Your key is not registered.\n\n")
-		s.WriteString("  Choose a username to register:\n")
-		s.WriteString("  " + m.textInput.View() + "\n\n")
+	if !m.isRegistered {
+		s.WriteString("  Hello, anonymous! Your key is not registered.\n\n")
+		s.WriteString("  Choose a username:\n  " + m.textInput.View() + "\n\n")
 		if m.errMessage != "" {
 			s.WriteString("  [!] " + m.errMessage + "\n\n")
 		}
-		s.WriteString("  Press Enter to register, or 'esc' to quit.\n")
+		s.WriteString("  Press Enter to register.\n")
+	} else if m.state == "dashboard" {
+		s.WriteString(fmt.Sprintf("  Hello, %s!\n\n", m.username))
+		s.WriteString("  [ Press ENTER to simulate an upload & choose who to share with ]\n\n")
+	} else if m.state == "share_picker" {
+		s.WriteString(fmt.Sprintf("  Select users who can access '%s':\n\n", m.currentFilename))
+		for i, u := range m.allUsers {
+			cursor := " "
+			if m.cursor == i {
+				cursor = ">"
+			}
+			checked := "[ ]"
+			if m.selectedUsers[u] {
+				checked = "[x]"
+			}
+			s.WriteString(fmt.Sprintf("  %s %s %s\n", cursor, checked, u))
+		}
+		s.WriteString("\n  [Space to toggle, Enter to confirm and save]\n")
 	}
 
 	s.WriteString("\n  Press 'esc' to exit.\n")
