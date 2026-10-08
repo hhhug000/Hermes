@@ -7,6 +7,7 @@ import (
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// Bubbletea makes you use a model struct for the tui state
 type model struct {
 	fingerprint  string
 	username     string
@@ -15,6 +16,7 @@ type model struct {
 	errMessage   string
 }
 
+// creates new model with the fingerprint and user, to be sent across ssh
 func initialModel(fingerprint, username string) model {
 	ti := textinput.New()
 	ti.Placeholder = "Enter desired username"
@@ -36,6 +38,7 @@ func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
+// update when message called (like keypress)
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
@@ -73,6 +76,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, cmd
 }
 
+// view the tui
 func (m model) View() string {
 	var s strings.Builder
 
