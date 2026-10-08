@@ -19,6 +19,7 @@ func InitDB() error {
 	// Make sure storage folder actually exists
 	_ = os.MkdirAll("storage", 0755)
 
+	// All the tables to make
 	queries := []string{`
 		CREATE TABLE IF NOT EXISTS users (
 			fingerprint TEXT PRIMARY KEY,
@@ -38,6 +39,7 @@ func InitDB() error {
 		);`,
 	}
 
+	// loop through and execute each query to make the tables
 	for _, query := range queries {
 		_, err = db.Exec(query)
 		if err != nil {
@@ -46,6 +48,9 @@ func InitDB() error {
 	}
 	return err
 }
+
+// DATABASE FUNCTIONS, these are for interacting with db so i dont need to write more sql
+// All the below are db funcs
 
 func GetUsername(fingerprint string) (string, error) {
 	var username string
@@ -71,6 +76,8 @@ func GetAllUsers() ([]string, error) {
 	var users []string
 	for rows.Next() {
 		var u string
+		// The &u means it is a pointer so scan writes to u and not a copy of it
+		// go being weird
 		if err := rows.Scan(&u); err != nil {
 			return nil, err
 		}
