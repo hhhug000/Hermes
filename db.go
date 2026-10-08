@@ -2,6 +2,7 @@ package main
 
 import (
 	"database/sql"
+	"os"
 
 	_ "modernc.org/sqlite"
 )
@@ -14,6 +15,9 @@ func InitDB() error {
 	if err != nil {
 		return err
 	}
+
+	// Make sure storage folder actually exists
+	_ = os.MkdirAll("storage", 0755)
 
 	queries := []string{`
 		CREATE TABLE IF NOT EXISTS users (
