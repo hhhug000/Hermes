@@ -19,17 +19,22 @@ func main() {
 	}
 
 	s, err := wish.NewServer(
+		// all ips on port 2222
 		wish.WithAddress("0.0.0.0:2222"),
+		// use the same host key otherwise safety warnings are shown every restart
 		wish.WithHostKeyPath("term_host_key"),
+		// make sure to allow public key auth otherwise fingerprint never shows
 		wish.WithPublicKeyAuth(func(ctx charmssh.Context, key charmssh.PublicKey) bool {
 			return true
 		}),
+		// bubbletea middleware for tui
 		wish.WithMiddleware(
 			wishbubble.Middleware(func(s charmssh.Session) (tea.Model, []tea.ProgramOption) {
 				pubKey := s.PublicKey()
 				var fingerprint string
 				var username string
 
+				// get the pubkey fingerprint
 				if pubKey != nil {
 					fingerprint = cryptossh.FingerprintSHA256(pubKey)
 					var err error
