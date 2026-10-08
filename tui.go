@@ -42,7 +42,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
-		case "q", "ctrl+c":
+		case "esc", "ctrl+c":
 			return m, tea.Quit
 
 		case "enter":
@@ -90,9 +90,9 @@ func (m model) View() string {
 		if m.errMessage != "" {
 			s.WriteString("  [!] " + m.errMessage + "\n\n")
 		}
-		s.WriteString("  Press Enter to register, or 'q' to quit.\n")
+		s.WriteString("  Press Enter to register, or 'esc' to quit.\n")
 	}
 
-	s.WriteString("\n  Press 'q' to exit.\n")
+	s.WriteString("\n  Press 'esc' to exit.\n")
 	return s.String()
 }
