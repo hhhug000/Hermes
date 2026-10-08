@@ -1,6 +1,8 @@
 package main
 
 import (
+	"fmt"
+	"io"
 	"log"
 	"os"
 	"os/signal"
@@ -10,6 +12,7 @@ import (
 	charmssh "github.com/charmbracelet/ssh"
 	"github.com/charmbracelet/wish"
 	wishbubble "github.com/charmbracelet/wish/bubbletea"
+	"github.com/google/uuid"
 	cryptossh "golang.org/x/crypto/ssh"
 )
 
@@ -27,26 +30,73 @@ func main() {
 		wish.WithPublicKeyAuth(func(ctx charmssh.Context, key charmssh.PublicKey) bool {
 			return true
 		}),
-		// bubbletea middleware for tui
+		// middleware for commands and tui
 		wish.WithMiddleware(
-			wishbubble.Middleware(func(s charmssh.Session) (tea.Model, []tea.ProgramOption) {
-				pubKey := s.PublicKey()
-				var fingerprint string
-				var username string
-
-				// get the pubkey fingerprint
-				if pubKey != nil {
-					fingerprint = cryptossh.FingerprintSHA256(pubKey)
-					var err error
-					username, err = GetUsername(fingerprint)
-					if err != nil {
-						log.Printf("DB error looking up fingerprint: %v", err)
+			func(next charmssh.Handler) charmssh.Handler {
+				return func(s charmssh.Session) {
+					pubKey := s.PublicKey()
+					if pubKey == nil {
+						fmt.Fprintln(s, "Error: Public key required.")
+						_ = s.Exit(1)
+						return
 					}
-				}
 
-				m := initialModel(fingerprint, username)
-				return m, []tea.ProgramOption{tea.WithAltScreen()}
-			}),
+					fingerprint := cryptossh.FingerprintSHA256(pubKey)
+					username, err := GetUsername(fingerprint)
+					if err != nil || username == "" {
+						fmt.Fprintln(s, "Error: You must register a username first. Run 'ssh localhost -p 2222' interactively.")
+						_ = s.Exit(1)
+						return
+					}
+
+					cmd := s.Command()
+
+					// pipe in file uploads if command is send
+					if len(cmd) >= 2 && cmd[0] == "send" {
+						filename := cmd[1]
+						fileID := uuid.New().String()
+						storagePath := fmt.Sprintf("./storage/%s", fileID)
+
+						dstFile, err := os.Create(storagePath)
+						if err != nil {
+							fmt.Fprintf(s, "File creation error  %v\r\n", err)
+							_ = s.Exit(1)
+							return
+						}
+						defer dstFile.Close()
+
+						// stream bits to disk so it doesnt need to go to ram
+						written, err := io.Copy(dstFile, s)
+						if err != nil {
+							fmt.Fprintf(s, "File streaming error %v\r\n", err)
+							_ = s.Exit(1)
+							return
+						}
+
+						// Save metadata to db
+						if err := SaveFileRecord(fileID, filename, fingerprint, storagePath); err != nil {
+							fmt.Fprintf(s, "Error saving file record: %v\r\n", err)
+							_ = s.Exit(1)
+							return
+						}
+
+						// grant access to uploader
+						_ = GrantAccess(fileID, username)
+
+						fmt.Fprintf(s, "Success! Received %d bytes for '%s'.\r\n", written, filename)
+						_ = s.Exit(0)
+						return
+					}
+
+					// launch tui if no command
+					tuiHandler := wishbubble.Middleware(func(s charmssh.Session) (tea.Model, []tea.ProgramOption) {
+						m := initialModel(fingerprint, username)
+						return m, []tea.ProgramOption{tea.WithAltScreen()}
+					})
+
+					tuiHandler(next)(s)
+				}
+			},
 		),
 	)
 
