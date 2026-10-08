@@ -14,6 +14,13 @@ type model struct {
 	isRegistered bool
 	textInput    textinput.Model
 	errMessage   string
+
+	state           string // register dashboard or share picker
+	allUsers        []string
+	selectedUsers   map[string]bool
+	currentFileId   string
+	currentFilename string
+	cursor          int
 }
 
 // creates new model with the fingerprint and user, to be sent across ssh
@@ -26,11 +33,18 @@ func initialModel(fingerprint, username string) model {
 
 	registered := username != ""
 
+	initialState := "register"
+	if registered {
+		initialState = "dashboard"
+	}
+
 	return model{
-		fingerprint:  fingerprint,
-		username:     username,
-		isRegistered: registered,
-		textInput:    ti,
+		fingerprint:   fingerprint,
+		username:      username,
+		isRegistered:  registered,
+		textInput:     ti,
+		state:         initialState,
+		selectedUsers: make(map[string]bool),
 	}
 }
 
