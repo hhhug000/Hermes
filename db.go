@@ -130,6 +130,17 @@ func GetAccessibleFiles(username string) ([]FileInfo, error) {
 	return files, nil
 }
 
+func GetFileForUser(fileId, username string) (storagePath string, err error) {
+	query := `
+		SELECT f.storage_path
+		FROM files f
+		JOIN file_access fa ON f.id = fa.file_id
+		WHERE f.id = ? AND fa.username = ?
+	`
+	err = db.QueryRow(query, fileId, username).Scan(&storagePath)
+	return storagePath, err
+}
+
 func GetUnsharedFileForUser(fingerprint string) (id string, filename string, err error) {
 	query := `
 		SELECT f.id, f.original_name
