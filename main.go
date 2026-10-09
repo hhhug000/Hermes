@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	tea "github.com/charmbracelet/bubbletea"
@@ -65,6 +66,28 @@ func main() {
 						for _, f := range files {
 							fmt.Fprintf(s, "%s  %-20s  %s\r\n", f.ID, f.OriginalName, f.Owner)
 						}
+						_ = s.Exit(0)
+						return
+					}
+
+					if len(cmd) >= 2 && cmd[0] == "download" {
+						fileID := strings.TrimSpace(cmd[1])
+						storagePath, err := GetFileForUser(username, fileID)
+						if err != nil {
+							_, _ = fmt.Fprintf(s, "Database error / Access denied: %v\r\n", err)
+							_ = s.Exit(1)
+							return
+						}
+
+						srcFile, err := os.Open(storagePath)
+						if err != nil {
+							fmt.Fprintf(s, "Failed to open file on disk (%s): %v\r\n", storagePath, err)
+							_ = s.Exit(1)
+							return
+						}
+						defer srcFile.Close()
+
+						_, _ = io.Copy(s, srcFile)
 						_ = s.Exit(0)
 						return
 					}

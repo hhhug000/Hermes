@@ -130,7 +130,7 @@ func GetAccessibleFiles(username string) ([]FileInfo, error) {
 	return files, nil
 }
 
-func GetFileForUser(fileId, username string) (storagePath string, err error) {
+func GetFileForUser(username, fileId string) (storagePath string, err error) {
 	query := `
 		SELECT f.storage_path
 		FROM files f
