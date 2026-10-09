@@ -130,6 +130,17 @@ func GetAccessibleFiles(username string) ([]FileInfo, error) {
 	return files, nil
 }
 
+func DeleteFile(fileId string) error {
+	var storagePath string
+	err := db.QueryRow("SELECT storage_path FROM files WHERE id = ?", fileId).Scan(&storagePath)
+	if err != nil && storagePath != "" {
+		_ = os.Remove(storagePath)
+	}
+	_, _ = db.Exec("DELETE FROM file_access WHERE file_id = ?", fileId)
+	_, err = db.Exec("DELETE FROM files WHERE id = ?", fileId)
+	return err
+}
+
 func GetFileForUser(username, fileId string) (storagePath string, err error) {
 	query := `
 		SELECT f.storage_path
