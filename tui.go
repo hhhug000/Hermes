@@ -6,7 +6,6 @@ import (
 
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
-	"github.com/google/uuid"
 )
 
 // Bubbletea makes you use a model struct for the tui state
@@ -92,16 +91,6 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isRegistered = true
 				m.state = "dashboard"
 				m.errMessage = ""
-			} else if m.state == "dashboard" {
-				fileUsers, err := GetAllUsers()
-				if err == nil {
-					m.allUsers = fileUsers
-				}
-				m.currentFileId = uuid.New().String()
-				m.currentFilename = "example.txt"
-				m.selectedUsers = make(map[string]bool)
-				m.cursor = 0
-				m.state = "share_picker"
 			} else if m.state == "share_picker" {
 				storagePath := fmt.Sprintf("./storage/%s", m.currentFileId)
 				_ = SaveFileRecord(m.currentFileId, m.currentFilename, m.fingerprint, storagePath)
@@ -160,7 +149,6 @@ func (m model) View() string {
 		s.WriteString("  Press Enter to register.\n")
 	} else if m.state == "dashboard" {
 		s.WriteString(fmt.Sprintf("  Hello, %s!\n\n", m.username))
-		s.WriteString("  [ Press ENTER to simulate an upload & choose who to share with ]\n\n")
 	} else if m.state == "share_picker" {
 		s.WriteString(fmt.Sprintf("  Select users who can access '%s':\n\n", m.currentFilename))
 		for i, u := range m.allUsers {
