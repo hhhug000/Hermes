@@ -51,6 +51,24 @@ func main() {
 
 					cmd := s.Command()
 
+					if len(cmd) >= 1 && cmd[0] == "list" {
+						files, err := GetAccessibleFiles(username)
+						if err != nil {
+							fmt.Fprintf(s, "Error fetching files: %v\r\n", err)
+							_ = s.Exit(1)
+							return
+						}
+						fmt.Fprintln(s, "Files shared with you:")
+						fmt.Fprintln(s, "----------------------------------------------------------------------")
+						fmt.Fprintf(s, "%-36s  %-20s  %s\r\n", "FILE ID", "NAME", "OWNER")
+						fmt.Fprintln(s, "----------------------------------------------------------------------")
+						for _, f := range files {
+							fmt.Fprintf(s, "%s  %-20s  %s\r\n", f.ID, f.OriginalName, f.Owner)
+						}
+						_ = s.Exit(0)
+						return
+					}
+
 					// pipe in file uploads if command is send
 					if len(cmd) >= 2 && cmd[0] == "send" {
 						filename := cmd[1]

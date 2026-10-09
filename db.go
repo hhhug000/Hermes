@@ -99,6 +99,37 @@ func GrantAccess(fileId, username string) error {
 	return err
 }
 
+type FileInfo struct {
+	ID           string
+	OriginalName string
+	Owner        string
+}
+
+func GetAccessibleFiles(username string) ([]FileInfo, error) {
+	query := `
+		SELECT f.id, f.original_name, u.username
+		FROM files f
+		JOIN file_access fa ON f.id = fa.file_id
+		JOIN users u ON f.owner_fingerprint = u.fingerprint
+		WHERE fa.username = ?
+	`
+	rows, err := db.Query(query, username)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var files []FileInfo
+	for rows.Next() {
+		var file FileInfo
+		if err := rows.Scan(&file.ID, &file.OriginalName, &file.Owner); err != nil {
+			return nil, err
+		}
+		files = append(files, file)
+	}
+	return files, nil
+}
+
 func GetUnsharedFileForUser(fingerprint string) (id string, filename string, err error) {
 	query := `
 		SELECT f.id, f.original_name
