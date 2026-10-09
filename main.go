@@ -81,6 +81,7 @@ func main() {
 						}
 
 						fmt.Fprintf(s, "Success! Received %d bytes for '%s'.\r\n", written, filename)
+						fmt.Fprintf(s, "Connect to the TUI with SSH to activate and share the file")
 						_ = s.Exit(0)
 						return
 					}
