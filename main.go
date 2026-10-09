@@ -80,9 +80,6 @@ func main() {
 							return
 						}
 
-						// grant access to uploader
-						_ = GrantAccess(fileID, username)
-
 						fmt.Fprintf(s, "Success! Received %d bytes for '%s'.\r\n", written, filename)
 						_ = s.Exit(0)
 						return

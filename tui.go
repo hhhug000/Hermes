@@ -91,6 +91,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.isRegistered = true
 				m.state = "dashboard"
 				m.errMessage = ""
+			} else if m.state == "dashboard" {
+				if fileID, filename, err := GetUnsharedFileForUser(m.fingerprint); err == nil && fileID != "" {
+					m.currentFileId = fileID
+					m.currentFilename = filename
+					m.allUsers, _ = GetAllUsers()
+					m.selectedUsers = make(map[string]bool)
+					m.cursor = 0
+					m.state = "share_picker"
+				}
 			} else if m.state == "share_picker" {
 				storagePath := fmt.Sprintf("./storage/%s", m.currentFileId)
 				_ = SaveFileRecord(m.currentFileId, m.currentFilename, m.fingerprint, storagePath)
@@ -149,6 +158,8 @@ func (m model) View() string {
 		s.WriteString("  Press Enter to register.\n")
 	} else if m.state == "dashboard" {
 		s.WriteString(fmt.Sprintf("  Hello, %s!\n\n", m.username))
+		s.WriteString("  No pending uploads to share.\n")
+		s.WriteString("  (Pipe a file in from your terminal using: cat file | ssh ... send file)\n\n")
 	} else if m.state == "share_picker" {
 		s.WriteString(fmt.Sprintf("  Select users who can access '%s':\n\n", m.currentFilename))
 		for i, u := range m.allUsers {
