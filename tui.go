@@ -23,6 +23,10 @@ type model struct {
 	currentFilename string
 	cursor          int
 	searchQuery     string
+
+	accessibleFiles  []FileInfo
+	fileSearchQuery  string
+	fileActionCursor int
 }
 
 func (m model) filteredUsers() []string {
@@ -34,6 +38,20 @@ func (m model) filteredUsers() []string {
 	for _, u := range m.allUsers {
 		if strings.Contains(strings.ToLower(u), q) {
 			res = append(res, u)
+		}
+	}
+	return res
+}
+
+func (m model) filteredFiles() []FileInfo {
+	q := strings.ToLower(strings.TrimSpace(m.fileSearchQuery))
+	if q == "" {
+		return m.accessibleFiles
+	}
+	var res []FileInfo
+	for _, f := range m.accessibleFiles {
+		if strings.Contains(strings.ToLower(f.OriginalName), q) || strings.Contains(strings.ToLower(f.Owner), q) {
+			res = append(res, f)
 		}
 	}
 	return res
@@ -75,6 +93,10 @@ func initialModel(fingerprint, username string) model {
 	if initialState == "share_picker" {
 		m.selectedUsers[username] = true
 	}
+	if initialState == "dashboard" {
+		m.accessibleFiles, _ = GetAccessibleFiles(username)
+	}
+
 	return m
 }
 
@@ -109,17 +131,32 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.username = val
 				m.isRegistered = true
 				m.state = "dashboard"
+				m.accessibleFiles, _ = GetAccessibleFiles(m.username)
 				m.errMessage = ""
 			} else if m.state == "dashboard" {
-				if fileID, filename, err := GetUnsharedFileForUser(m.fingerprint); err == nil && fileID != "" {
-					m.currentFileId = fileID
-					m.currentFilename = filename
+				filtered := m.filteredFiles()
+				if len(filtered) > 0 && m.cursor < len(filtered) {
+					selected := filtered[m.cursor]
+					m.currentFileId = selected.ID
+					m.currentFilename = selected.OriginalName
+					m.state = "file_actions"
+					m.cursor = 0
+				}
+			} else if m.state == "file_actions" {
+				if m.cursor == 0 {
 					m.allUsers, _ = GetAllUsers()
 					m.selectedUsers = make(map[string]bool)
 					m.selectedUsers[m.username] = true
-					m.searchQuery = ""
-					m.cursor = 0
 					m.state = "share_picker"
+					m.cursor = 0
+				} else if m.cursor == 1 {
+					_ = DeleteFile(m.currentFileId)
+					m.accessibleFiles, _ = GetAccessibleFiles(m.username)
+					m.state = "dashboard"
+					m.cursor = 0
+				} else if m.cursor == 2 {
+					m.state = "dashboard"
+					m.cursor = 0
 				}
 			} else if m.state == "share_picker" {
 				storagePath := fmt.Sprintf("./storage/%s", m.currentFileId)
@@ -136,6 +173,7 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					m.currentFilename = nextName
 					m.selectedUsers = make(map[string]bool)
 					m.searchQuery = ""
+
 				} else {
 					m.state = "dashboard"
 				}
@@ -144,11 +182,24 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		case "up", "k":
 			if m.state == "share_picker" && m.cursor > 0 {
 				m.cursor--
+			} else if m.state == "dashboard" && m.cursor > 0 {
+				m.cursor--
+			} else if m.state == "file_actions" && m.cursor > 0 {
+				m.cursor--
 			}
 		case "down", "j":
 			if m.state == "share_picker" {
 				filtered := m.filteredUsers()
 				if m.cursor < len(filtered)-1 {
+					m.cursor++
+				}
+			} else if m.state == "dashboard" {
+				filtered := m.filteredFiles()
+				if m.cursor < len(filtered)-1 {
+					m.cursor++
+				}
+			} else if m.state == "file_actions" {
+				if m.cursor < 2 {
 					m.cursor++
 				}
 			}
@@ -160,6 +211,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					if targetUser != m.username {
 						m.selectedUsers[targetUser] = !m.selectedUsers[targetUser]
 					}
+				} else if m.state == "dashboard" && len(m.fileSearchQuery) > 0 {
+					m.fileSearchQuery = m.fileSearchQuery[:len(m.fileSearchQuery)-1]
+					m.cursor = 0
 				}
 			}
 		case "backspace":
@@ -170,6 +224,9 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		default:
 			if m.state == "share_picker" && msg.Type == tea.KeyRunes {
 				m.searchQuery += string(msg.Runes)
+				m.cursor = 0
+			} else if m.state == "dashboard" && msg.Type == tea.KeyRunes {
+				m.fileSearchQuery += string(msg.Runes)
 				m.cursor = 0
 			}
 		}
@@ -197,8 +254,38 @@ func (m model) View() string {
 		s.WriteString("  Press Enter to register.\n")
 	} else if m.state == "dashboard" {
 		s.WriteString(fmt.Sprintf("  Hello, %s!\n\n", m.username))
-		s.WriteString("  No pending uploads to share.\n")
-		s.WriteString("  (Pipe a file in from your terminal using: cat file | ssh ... send file)\n\n")
+		s.WriteString(fmt.Sprintf("  Search files: %s_\n\n", m.fileSearchQuery))
+
+		filtered := m.filteredFiles()
+		if len(filtered) == 0 {
+			s.WriteString("  No files found. (Pipe a file in using: cat file | ssh ... send name)\n")
+		}
+
+		for i, f := range filtered {
+			cursor := " "
+			if m.cursor == i {
+				cursor = ">"
+			}
+			s.WriteString(fmt.Sprintf("  %s %-20s (Owner: %s)\n", cursor, f.OriginalName, f.Owner))
+		}
+		s.WriteString("\n  [Type to search | Up/Down to navigate | Enter to select file]\n")
+	} else if m.state == "file_actions" {
+		s.WriteString(fmt.Sprintf("  File: %s\n\n", m.currentFilename))
+		s.WriteString("  Select an action:\n\n")
+
+		options := []string{
+			"Edit access / Share picker",
+			"Delete file",
+			"Back to file list",
+		}
+		for i, opt := range options {
+			cursor := " "
+			if m.cursor == i {
+				cursor = ">"
+			}
+			s.WriteString(fmt.Sprintf("  %s %s\n", cursor, opt))
+		}
+		s.WriteString("\n  [Up/Down to select | Enter to confirm]\n")
 	} else if m.state == "share_picker" {
 		s.WriteString(fmt.Sprintf("  Sharing file: %s\n\n", m.currentFilename))
 		s.WriteString(fmt.Sprintf("  Search users: %s_\n\n", m.searchQuery))
