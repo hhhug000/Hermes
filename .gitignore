@@ -30,3 +30,5 @@ term_host_key.pub
 hermes.db
 
 storage/*
+
+hermes.conf

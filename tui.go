@@ -272,8 +272,9 @@ func (m model) View() string {
 	} else if m.state == "file_actions" {
 		s.WriteString(fmt.Sprintf("  File: %s\n\n", m.currentFilename))
 		s.WriteString(fmt.Sprintf("  ID:   %s\n\n", m.currentFileId))
+		cfg := LoadConfig()
 		s.WriteString("  Download via CLI:\n")
-		s.WriteString(fmt.Sprintf("  ssh localhost -p 2222 download %s > %s\n\n", m.currentFileId, m.currentFilename))
+		s.WriteString(fmt.Sprintf("  ssh %s -p %s download %s > %s/%s\n\n", cfg.Host, cfg.Port, m.currentFileId, cfg.DownloadDir, m.currentFilename))
 
 		s.WriteString("  Select an action:\n\n")
 
