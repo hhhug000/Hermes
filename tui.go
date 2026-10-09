@@ -22,6 +22,21 @@ type model struct {
 	currentFileId   string
 	currentFilename string
 	cursor          int
+	searchQuery     string
+}
+
+func (m model) filteredUsers() []string {
+	q := strings.ToLower(strings.TrimSpace(m.searchQuery))
+	if q == "" {
+		return m.allUsers
+	}
+	var res []string
+	for _, u := range m.allUsers {
+		if strings.Contains(strings.ToLower(u), q) {
+			res = append(res, u)
+		}
+	}
+	return res
 }
 
 // creates new model with the fingerprint and user, to be sent across ssh
