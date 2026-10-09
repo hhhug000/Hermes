@@ -98,3 +98,18 @@ func GrantAccess(fileId, username string) error {
 	_, err := db.Exec("INSERT OR IGNORE INTO file_access (file_id, username) VALUES (?, ?)", fileId, username)
 	return err
 }
+
+func GetUnsharedFileForUser(fingerprint string) (id string, filename string, err error) {
+	query := `
+		SELECT f.id, f.original_name
+		FROM files f
+		LEFT JOIN file_access fa ON f.id = fa.file_id
+		WHERE f.owner_fingerprint = ? AND fa.file_id IS NULL
+		LIMIT 1
+	`
+	err = db.QueryRow(query, fingerprint).Scan(&id, &filename)
+	if err == sql.ErrNoRows {
+		return "", "", nil
+	}
+	return id, filename, err
+}
