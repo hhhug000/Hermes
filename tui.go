@@ -37,16 +37,26 @@ func initialModel(fingerprint, username string) model {
 
 	initialState := "register"
 	if registered {
-		initialState = "dashboard"
+		if fileId, _, err := GetUnsharedFileForUser(fingerprint); err == nil && fileId != "" {
+			initialState = "share_picker"
+		} else {
+			initialState = "dashboard"
+		}
 	}
 
+	fileUsers, _ := GetAllUsers()
+	fileId, filename, _ := GetUnsharedFileForUser(fingerprint)
+
 	return model{
-		fingerprint:   fingerprint,
-		username:      username,
-		isRegistered:  registered,
-		textInput:     ti,
-		state:         initialState,
-		selectedUsers: make(map[string]bool),
+		fingerprint:     fingerprint,
+		username:        username,
+		isRegistered:    registered,
+		textInput:       ti,
+		state:           initialState,
+		selectedUsers:   make(map[string]bool),
+		allUsers:        fileUsers,
+		currentFileId:   fileId,
+		currentFilename: filename,
 	}
 }
 
@@ -101,7 +111,15 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 						_ = GrantAccess(m.currentFileId, u)
 					}
 				}
-				m.state = "dashboard"
+				// Search for next file to assign sharing to
+				if nextId, nextName, err := GetUnsharedFileForUser(m.fingerprint); err == nil && nextId != "" {
+					m.currentFileId = nextId
+					m.currentFilename = nextName
+					m.selectedUsers = make(map[string]bool)
+
+				} else {
+					m.state = "dashboard"
+				}
 			}
 
 		case "up", "k":
