@@ -4,69 +4,69 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/charmbracelet/bubbles/list"
 	"github.com/charmbracelet/bubbles/textinput"
 	tea "github.com/charmbracelet/bubbletea"
 )
 
+// item wrappers for bubbles list
+type fileItem struct {
+	file FileInfo
+}
+
+func (i fileItem) FilterValue() string { return i.file.OriginalName + " " + i.file.Owner }
+func (i fileItem) Title() string       { return i.file.OriginalName }
+func (i fileItem) Description() string {
+	return fmt.Sprintf("Owner: %s | ID: %s", i.file.Owner, i.file.ID)
+}
+
+// item wrappers for bubbles list
+type userItem struct {
+	username string
+	selected bool
+	isSelf   bool
+}
+
+// implement list.Item for userItem
+func (i userItem) FilterValue() string { return i.username }
+func (i userItem) Title() string {
+	box := "[ ]"
+	if i.selected {
+		box = "[x]"
+	}
+	if i.isSelf {
+		return fmt.Sprintf("%s %s (You - Required)", box, i.username)
+	}
+	return fmt.Sprintf("%s %s", box, i.username)
+}
+func (i userItem) Description() string { return "Press Space to toggle access" }
+
 // Bubbletea makes you use a model struct for the tui state
 type model struct {
-	fingerprint  string
-	username     string
-	isRegistered bool
-	textInput    textinput.Model
-	errMessage   string
-
-	state           string // register dashboard or share picker
-	allUsers        []string
-	selectedUsers   map[string]bool
+	fingerprint     string
+	username        string
+	isRegistered    bool
+	textInput       textinput.Model
+	errMessage      string
+	state           string // register, dashboard, file_actions, share_picker
+	fileList        list.Model
+	userList        list.Model
 	currentFileId   string
 	currentFilename string
-	cursor          int
-	searchQuery     string
-
-	accessibleFiles  []FileInfo
-	fileSearchQuery  string
-	fileActionCursor int
+	actionCursor    int
 }
 
-func (m model) filteredUsers() []string {
-	q := strings.ToLower(strings.TrimSpace(m.searchQuery))
-	if q == "" {
-		return m.allUsers
-	}
-	var res []string
-	for _, u := range m.allUsers {
-		if strings.Contains(strings.ToLower(u), q) {
-			res = append(res, u)
-		}
-	}
-	return res
-}
-
-func (m model) filteredFiles() []FileInfo {
-	q := strings.ToLower(strings.TrimSpace(m.fileSearchQuery))
-	if q == "" {
-		return m.accessibleFiles
-	}
-	var res []FileInfo
-	for _, f := range m.accessibleFiles {
-		if strings.Contains(strings.ToLower(f.OriginalName), q) || strings.Contains(strings.ToLower(f.Owner), q) {
-			res = append(res, f)
-		}
-	}
-	return res
-}
-
-// creates new model with the fingerprint and user, to be sent across ssh
+// init the tui model
 func initialModel(fingerprint, username string) model {
+	// text for username input
 	ti := textinput.New()
 	ti.Placeholder = "Enter desired username"
 	ti.Focus()
 	ti.CharLimit = 20
 	ti.Width = 30
 
+	// determine state based on registration and unshare files
 	registered := username != ""
-
 	initialState := "register"
 	if registered {
 		if fileId, _, err := GetUnsharedFileForUser(fingerprint); err == nil && fileId != "" {
@@ -76,38 +76,58 @@ func initialModel(fingerprint, username string) model {
 		}
 	}
 
-	fileUsers, _ := GetAllUsers()
+	// init file list component
+	files, _ := GetAccessibleFiles(username)
+	var fileItems []list.Item
+	for _, f := range files {
+		fileItems = append(fileItems, fileItem{file: f})
+	}
+	// set up list
+	fList := list.New(fileItems, list.NewDefaultDelegate(), 60, 14)
+	fList.Title = "File Inbox"
+	fList.SetShowHelp(true)
+
+	// init user list component
+	allUsers, _ := GetAllUsers()
 	fileId, filename, _ := GetUnsharedFileForUser(fingerprint)
 
-	m := model{
+	var userItems []list.Item
+	for _, u := range allUsers {
+		isSelf := (u == username)
+		userItems = append(userItems, userItem{
+			username: u,
+			selected: isSelf,
+			isSelf:   isSelf,
+		})
+	}
+	uList := list.New(userItems, list.NewDefaultDelegate(), 60, 14)
+	uList.Title = fmt.Sprintf("Share: %s", filename)
+	uList.SetShowHelp(true)
+
+	// return the model to be used
+	return model{
 		fingerprint:     fingerprint,
 		username:        username,
 		isRegistered:    registered,
 		textInput:       ti,
 		state:           initialState,
-		selectedUsers:   make(map[string]bool),
-		allUsers:        fileUsers,
+		fileList:        fList,
+		userList:        uList,
 		currentFileId:   fileId,
 		currentFilename: filename,
 	}
-	if initialState == "share_picker" {
-		m.selectedUsers[username] = true
-	}
-	if initialState == "dashboard" {
-		m.accessibleFiles, _ = GetAccessibleFiles(username)
-	}
-
-	return m
 }
 
+// init func for the tui
 func (m model) Init() tea.Cmd {
 	return textinput.Blink
 }
 
-// update when message called (like keypress)
+// update, changes tui model based on messages
 func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 
+	// switch for messages
 	switch msg := msg.(type) {
 	case tea.KeyMsg:
 		switch msg.String() {
@@ -131,109 +151,135 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				m.username = val
 				m.isRegistered = true
 				m.state = "dashboard"
-				m.accessibleFiles, _ = GetAccessibleFiles(m.username)
+
+				// file list refresh
+				files, _ := GetAccessibleFiles(m.username)
+				var items []list.Item
+				for _, f := range files {
+					items = append(items, fileItem{file: f})
+				}
+				m.fileList.SetItems(items)
 				m.errMessage = ""
-			} else if m.state == "dashboard" {
-				filtered := m.filteredFiles()
-				if len(filtered) > 0 && m.cursor < len(filtered) {
-					selected := filtered[m.cursor]
-					m.currentFileId = selected.ID
-					m.currentFilename = selected.OriginalName
+				return m, nil
+			}
+
+			if m.state == "dashboard" {
+				selectedItem := m.fileList.SelectedItem()
+				if selectedItem != nil {
+					fi := selectedItem.(fileItem).file
+					m.currentFileId = fi.ID
+					m.currentFilename = fi.OriginalName
 					m.state = "file_actions"
-					m.cursor = 0
+					m.actionCursor = 0
 				}
-			} else if m.state == "file_actions" {
-				if m.cursor == 0 {
-					m.allUsers, _ = GetAllUsers()
-					m.selectedUsers = make(map[string]bool)
-					m.selectedUsers[m.username] = true
+				return m, nil
+			}
+
+			if m.state == "file_actions" {
+				if m.actionCursor == 0 {
+					// reenter share picker
+					allUsers, _ := GetAllUsers()
+					var userItems []list.Item
+					for _, u := range allUsers {
+						userItems = append(userItems, userItem{
+							username: u,
+							selected: (u == m.username),
+							isSelf:   (u == m.username),
+						})
+					}
+					m.userList.SetItems(userItems)
+					m.userList.Title = fmt.Sprintf("Edit Access: %s", m.currentFilename)
 					m.state = "share_picker"
-					m.cursor = 0
-				} else if m.cursor == 1 {
+				} else if m.actionCursor == 1 {
+					// Delete file
 					_ = DeleteFile(m.currentFileId)
-					m.accessibleFiles, _ = GetAccessibleFiles(m.username)
+					files, _ := GetAccessibleFiles(m.username)
+					var items []list.Item
+					for _, f := range files {
+						items = append(items, fileItem{file: f})
+					}
+					m.fileList.SetItems(items)
 					m.state = "dashboard"
-					m.cursor = 0
-				} else if m.cursor == 2 {
+				} else if m.actionCursor == 2 {
 					m.state = "dashboard"
-					m.cursor = 0
 				}
-			} else if m.state == "share_picker" {
+				return m, nil
+			}
+
+			if m.state == "share_picker" {
 				storagePath := fmt.Sprintf("./storage/%s", m.currentFileId)
 				_ = SaveFileRecord(m.currentFileId, m.currentFilename, m.fingerprint, storagePath)
 
-				for u, allowed := range m.selectedUsers {
-					if allowed {
-						_ = GrantAccess(m.currentFileId, u)
+				// save selected users from list
+				for _, item := range m.userList.Items() {
+					ui := item.(userItem)
+					if ui.selected {
+						_ = GrantAccess(m.currentFileId, ui.username)
 					}
 				}
+
 				// Search for next file to assign sharing to
 				if nextId, nextName, err := GetUnsharedFileForUser(m.fingerprint); err == nil && nextId != "" {
 					m.currentFileId = nextId
 					m.currentFilename = nextName
-					m.selectedUsers = make(map[string]bool)
-					m.searchQuery = ""
-
+					allUsers, _ := GetAllUsers()
+					var userItems []list.Item
+					for _, u := range allUsers {
+						userItems = append(userItems, userItem{
+							username: u,
+							selected: (u == m.username),
+							isSelf:   (u == m.username),
+						})
+					}
+					m.userList.SetItems(userItems)
+					m.userList.Title = fmt.Sprintf("Share: %s", nextName)
 				} else {
 					m.state = "dashboard"
+					files, _ := GetAccessibleFiles(m.username)
+					var items []list.Item
+					for _, f := range files {
+						items = append(items, fileItem{file: f})
+					}
+					m.fileList.SetItems(items)
 				}
+				return m, nil
+			}
+
+		case " ":
+			if m.state == "share_picker" {
+				idx := m.userList.Index()
+				items := m.userList.Items()
+				if idx >= 0 && idx < len(items) {
+					ui := items[idx].(userItem)
+					if !ui.isSelf {
+						ui.selected = !ui.selected
+						items[idx] = ui
+						m.userList.SetItems(items)
+					}
+				}
+				return m, nil
 			}
 
 		case "up", "k":
-			if m.state == "share_picker" && m.cursor > 0 {
-				m.cursor--
-			} else if m.state == "dashboard" && m.cursor > 0 {
-				m.cursor--
-			} else if m.state == "file_actions" && m.cursor > 0 {
-				m.cursor--
+			if m.state == "file_actions" && m.actionCursor > 0 {
+				m.actionCursor--
+				return m, nil
 			}
 		case "down", "j":
-			if m.state == "share_picker" {
-				filtered := m.filteredUsers()
-				if m.cursor < len(filtered)-1 {
-					m.cursor++
-				}
-			} else if m.state == "dashboard" {
-				filtered := m.filteredFiles()
-				if m.cursor < len(filtered)-1 {
-					m.cursor++
-				}
-			} else if m.state == "file_actions" {
-				if m.cursor < 2 {
-					m.cursor++
-				}
-			}
-		case " ":
-			if m.state == "share_picker" && len(m.allUsers) > 0 {
-				filtered := m.filteredUsers()
-				if len(filtered) > 0 && m.cursor < len(filtered) {
-					targetUser := filtered[m.cursor]
-					if targetUser != m.username {
-						m.selectedUsers[targetUser] = !m.selectedUsers[targetUser]
-					}
-				} else if m.state == "dashboard" && len(m.fileSearchQuery) > 0 {
-					m.fileSearchQuery = m.fileSearchQuery[:len(m.fileSearchQuery)-1]
-					m.cursor = 0
-				}
-			}
-		case "backspace":
-			if m.state == "share_picker" && len(m.searchQuery) > 0 {
-				m.searchQuery = m.searchQuery[:len(m.searchQuery)-1]
-				m.cursor = 0
-			}
-		default:
-			if m.state == "share_picker" && msg.Type == tea.KeyRunes {
-				m.searchQuery += string(msg.Runes)
-				m.cursor = 0
-			} else if m.state == "dashboard" && msg.Type == tea.KeyRunes {
-				m.fileSearchQuery += string(msg.Runes)
-				m.cursor = 0
+			if m.state == "file_actions" && m.actionCursor < 2 {
+				m.actionCursor++
+				return m, nil
 			}
 		}
 	}
 
+	// send messages to right component
 	if !m.isRegistered && m.state == "register" {
 		m.textInput, cmd = m.textInput.Update(msg)
+	} else if m.state == "dashboard" {
+		m.fileList, cmd = m.fileList.Update(msg)
+	} else if m.state == "share_picker" {
+		m.userList, cmd = m.userList.Update(msg)
 	}
 
 	return m, cmd
@@ -243,6 +289,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 func (m model) View() string {
 	var s strings.Builder
 
+	// all this is the tui view, done with a string builder
+	// string builder is also better for performance
 	s.WriteString("\n  Hermes file sharing\n\n")
 
 	if !m.isRegistered {
@@ -254,30 +302,16 @@ func (m model) View() string {
 		s.WriteString("  Press Enter to register.\n")
 	} else if m.state == "dashboard" {
 		s.WriteString(fmt.Sprintf("  Hello, %s!\n\n", m.username))
-		s.WriteString(fmt.Sprintf("  Search files: %s_\n\n", m.fileSearchQuery))
-
-		filtered := m.filteredFiles()
-		if len(filtered) == 0 {
-			s.WriteString("  No files found. (Pipe a file in using: cat file | ssh ... send name)\n")
-		}
-
-		for i, f := range filtered {
-			cursor := " "
-			if m.cursor == i {
-				cursor = ">"
-			}
-			s.WriteString(fmt.Sprintf("  %s %-20s (Owner: %s)\n", cursor, f.OriginalName, f.Owner))
-		}
-		s.WriteString("\n  [Type to search | Up/Down to navigate | Enter to select file]\n")
+		s.WriteString(m.fileList.View())
+		s.WriteString("\n  (Pipe a file in using: cat file | ssh ... send name)\n")
 	} else if m.state == "file_actions" {
-		s.WriteString(fmt.Sprintf("  File: %s\n\n", m.currentFilename))
+		s.WriteString(fmt.Sprintf("  File: %s\n", m.currentFilename))
 		s.WriteString(fmt.Sprintf("  ID:   %s\n\n", m.currentFileId))
 		cfg := LoadConfig()
 		s.WriteString("  Download via CLI:\n")
 		s.WriteString(fmt.Sprintf("  ssh %s -p %s download %s > %s/%s\n\n", cfg.Host, cfg.Port, m.currentFileId, cfg.DownloadDir, m.currentFilename))
 
 		s.WriteString("  Select an action:\n\n")
-
 		options := []string{
 			"Edit access / Share picker",
 			"Delete file",
@@ -285,38 +319,15 @@ func (m model) View() string {
 		}
 		for i, opt := range options {
 			cursor := " "
-			if m.cursor == i {
+			if m.actionCursor == i {
 				cursor = ">"
 			}
 			s.WriteString(fmt.Sprintf("  %s %s\n", cursor, opt))
 		}
 		s.WriteString("\n  [Up/Down to select | Enter to confirm]\n")
 	} else if m.state == "share_picker" {
-		s.WriteString(fmt.Sprintf("  Sharing file: %s\n\n", m.currentFilename))
-		s.WriteString(fmt.Sprintf("  Search users: %s_\n\n", m.searchQuery))
-
-		filtered := m.filteredUsers()
-		if len(filtered) == 0 {
-			s.WriteString("  No matching users found.\n")
-		}
-
-		for i, u := range filtered {
-			cursor := " "
-			if m.cursor == i {
-				cursor = ">"
-			}
-			checked := "[ ]"
-			if m.selectedUsers[u] {
-				checked = "[x]"
-			}
-			displayLabel := u
-			if u == m.username {
-				displayLabel += " (You - Required)"
-			}
-
-			s.WriteString(fmt.Sprintf("  %s %s %s\n", cursor, checked, displayLabel))
-		}
-		s.WriteString("\n  [Type to search | Space to toggle | Enter to confirm]\n")
+		s.WriteString(m.userList.View())
+		s.WriteString("\n  [Type to filter | Space to toggle access | Enter to confirm]\n")
 	}
 
 	s.WriteString("\n  Press 'esc' to exit.\n")
