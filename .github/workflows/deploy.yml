@@ -17,7 +17,7 @@ jobs:
           username: ${{ secrets.SSH_USER }}
           key: ${{ secrets.SSH_PRIVATE_KEY }}
           script: |
-            cd ~/hermes
+            cd ~/Hermes
             git pull
             pkill Hermes
             go run . &
