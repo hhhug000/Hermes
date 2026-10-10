@@ -28,3 +28,9 @@ download_dir = .
 ```
 
 Make sure to name it `hermes.conf`
+
+## Want to try without installing?
+
+I host a Hermes server on hack club nest.
+This can be accessed with `ssh 10.60.4.59 -p 2222`
+Please don't use this as an actual server, I have 0 uptime guarantees and i might delete all files from it occassionally
