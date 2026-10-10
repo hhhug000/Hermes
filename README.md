@@ -29,8 +29,25 @@ download_dir = .
 
 Make sure to name it `hermes.conf`
 
-## Want to try without installing?
+## Want to try?
 
-I host a Hermes server on hack club nest.
-This can be accessed with `ssh <My nest ip> -p 2222`
-Please don't use this as an actual server, I have 0 uptime guarantees and i might delete all files from it occassionally
+There is no public test server, but you can host one youself!
+Don't worry this is super simple.
+Just clone the repo, and run the code!
+
+```
+git clone https://github.com/hhhug000/Hermes.git
+cd Hermes
+cp hermes.conf.example hermes.conf
+go run .
+```
+
+Then in a new terminal run the following command to connect
+
+```
+ssh localhost -p 2222
+```
+
+## Not working?
+
+If Hermes is not working, try making sure you have at least 1 default SSH key installed, as Hermes uses this for user identification.
