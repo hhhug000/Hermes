@@ -41,6 +41,16 @@ func (i userItem) Title() string {
 }
 func (i userItem) Description() string { return "Press Space to toggle access" }
 
+type actionItem struct {
+	title       string
+	description string
+	id          int
+}
+
+func (i actionItem) FilterValue() string { return i.title }
+func (i actionItem) Title() string       { return i.title }
+func (i actionItem) Description() string { return i.description }
+
 // Bubbletea makes you use a model struct for the tui state
 type model struct {
 	fingerprint     string
@@ -54,6 +64,7 @@ type model struct {
 	currentFileId   string
 	currentFilename string
 	actionCursor    int
+	actionList      list.Model
 }
 
 // init the tui model
@@ -104,6 +115,15 @@ func initialModel(fingerprint, username string) model {
 	uList.Title = fmt.Sprintf("Share: %s", filename)
 	uList.SetShowHelp(true)
 
+	actionItems := []list.Item{
+		actionItem{title: "Edit access / Share picker", description: "Modify who can access this file", id: 0},
+		actionItem{title: "Delete file", description: "Permanently delete this file", id: 1},
+		actionItem{title: "Back to file list", description: "Return to the main file list", id: 2},
+	}
+	aList := list.New(actionItems, list.NewDefaultDelegate(), 60, 8)
+	aList.Title = fmt.Sprintf("Action: %s", filename)
+	aList.SetShowHelp(true)
+
 	// return the model to be used
 	return model{
 		fingerprint:     fingerprint,
@@ -115,6 +135,7 @@ func initialModel(fingerprint, username string) model {
 		userList:        uList,
 		currentFileId:   fileId,
 		currentFilename: filename,
+		actionList:      aList,
 	}
 }
 
@@ -169,39 +190,52 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 					fi := selectedItem.(fileItem).file
 					m.currentFileId = fi.ID
 					m.currentFilename = fi.OriginalName
+
+					// update action list title for selected file
+					actionItems := []list.Item{
+						actionItem{title: "Edit access / Share picker", description: "Modify who can access this file", id: 0},
+						actionItem{title: "Delete file", description: "Remove file from disk and database", id: 1},
+						actionItem{title: "Back to file list", description: "Return to the inbox", id: 2},
+					}
+					m.actionList.SetItems(actionItems)
+					m.actionList.Title = fmt.Sprintf("Actions: %s", fi.OriginalName)
+
 					m.state = "file_actions"
-					m.actionCursor = 0
 				}
 				return m, nil
 			}
 
 			if m.state == "file_actions" {
-				if m.actionCursor == 0 {
-					// reenter share picker
-					allUsers, _ := GetAllUsers()
-					var userItems []list.Item
-					for _, u := range allUsers {
-						userItems = append(userItems, userItem{
-							username: u,
-							selected: (u == m.username),
-							isSelf:   (u == m.username),
-						})
+				selectedItem := m.actionList.SelectedItem()
+				if selectedItem != nil {
+					ai := selectedItem.(actionItem)
+					if ai.id == 0 {
+						// reenter share picker
+						allUsers, _ := GetAllUsers()
+						var userItems []list.Item
+						for _, u := range allUsers {
+							userItems = append(userItems, userItem{
+								username: u,
+								selected: (u == m.username),
+								isSelf:   (u == m.username),
+							})
+						}
+						m.userList.SetItems(userItems)
+						m.userList.Title = fmt.Sprintf("Edit Access: %s", m.currentFilename)
+						m.state = "share_picker"
+					} else if ai.id == 1 {
+						// Delete file
+						_ = DeleteFile(m.currentFileId)
+						files, _ := GetAccessibleFiles(m.username)
+						var items []list.Item
+						for _, f := range files {
+							items = append(items, fileItem{file: f})
+						}
+						m.fileList.SetItems(items)
+						m.state = "dashboard"
+					} else if ai.id == 2 {
+						m.state = "dashboard"
 					}
-					m.userList.SetItems(userItems)
-					m.userList.Title = fmt.Sprintf("Edit Access: %s", m.currentFilename)
-					m.state = "share_picker"
-				} else if m.actionCursor == 1 {
-					// Delete file
-					_ = DeleteFile(m.currentFileId)
-					files, _ := GetAccessibleFiles(m.username)
-					var items []list.Item
-					for _, f := range files {
-						items = append(items, fileItem{file: f})
-					}
-					m.fileList.SetItems(items)
-					m.state = "dashboard"
-				} else if m.actionCursor == 2 {
-					m.state = "dashboard"
 				}
 				return m, nil
 			}
@@ -278,6 +312,8 @@ func (m model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.textInput, cmd = m.textInput.Update(msg)
 	} else if m.state == "dashboard" {
 		m.fileList, cmd = m.fileList.Update(msg)
+	} else if m.state == "file_actions" {
+		m.actionList, cmd = m.actionList.Update(msg)
 	} else if m.state == "share_picker" {
 		m.userList, cmd = m.userList.Update(msg)
 	}
@@ -301,9 +337,10 @@ func (m model) View() string {
 		}
 		s.WriteString("  Press Enter to register.\n")
 	} else if m.state == "dashboard" {
-		s.WriteString(fmt.Sprintf("  Hello, %s!\n\n", m.username))
+		cfg := LoadConfig()
+		s.WriteString(fmt.Sprintf("  Hello, %s!\n", m.username))
+		s.WriteString(fmt.Sprintf("\n  (Save a file using: cat file | ssh %s -p %s send name)\n\n", cfg.Host, cfg.Port))
 		s.WriteString(m.fileList.View())
-		s.WriteString("\n  (Pipe a file in using: cat file | ssh ... send name)\n")
 	} else if m.state == "file_actions" {
 		s.WriteString(fmt.Sprintf("  File: %s\n", m.currentFilename))
 		s.WriteString(fmt.Sprintf("  ID:   %s\n\n", m.currentFileId))
@@ -311,25 +348,12 @@ func (m model) View() string {
 		s.WriteString("  Download via CLI:\n")
 		s.WriteString(fmt.Sprintf("  ssh %s -p %s download %s > %s/%s\n\n", cfg.Host, cfg.Port, m.currentFileId, cfg.DownloadDir, m.currentFilename))
 
-		s.WriteString("  Select an action:\n\n")
-		options := []string{
-			"Edit access / Share picker",
-			"Delete file",
-			"Back to file list",
-		}
-		for i, opt := range options {
-			cursor := " "
-			if m.actionCursor == i {
-				cursor = ">"
-			}
-			s.WriteString(fmt.Sprintf("  %s %s\n", cursor, opt))
-		}
-		s.WriteString("\n  [Up/Down to select | Enter to confirm]\n")
+		s.WriteString(m.actionList.View())
+
 	} else if m.state == "share_picker" {
 		s.WriteString(m.userList.View())
 		s.WriteString("\n  [Type to filter | Space to toggle access | Enter to confirm]\n")
 	}
 
-	s.WriteString("\n  Press 'esc' to exit.\n")
 	return s.String()
 }
