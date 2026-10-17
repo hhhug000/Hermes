@@ -14,7 +14,9 @@ If you dont want to bother setting up a Hermes server, you can just watch this v
 
 ## Try it out yourself
 
-If you actually want to use Hermes yourself, then just run the commands below to install and run it:
+If you actually want to use Hermes yourself, then just run the commands below to install and run it
+
+This example requires that you have golang installed, and you are on linux, most commands will work on windows, but CP might not. To do that on windows just copy the example config file to the same folder and rename it to hermes.conf
 
 ```
 git clone https://github.com/hhhug000/Hermes.git
