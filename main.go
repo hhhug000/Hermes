@@ -44,13 +44,13 @@ func main() {
 
 					fingerprint := cryptossh.FingerprintSHA256(pubKey)
 					username, err := GetUsername(fingerprint)
-					if err != nil || username == "" {
+					cmd := s.Command()
+
+					if len(cmd) > 0 && (err != nil || username == "") {
 						fmt.Fprintln(s, "Error: You must register a username first. Run 'ssh localhost -p 2222' interactively.")
 						_ = s.Exit(1)
 						return
 					}
-
-					cmd := s.Command()
 
 					if len(cmd) >= 1 && cmd[0] == "list" {
 						files, err := GetAccessibleFiles(username)
