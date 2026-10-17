@@ -35,6 +35,9 @@ There is no public test server, but you can host one youself!
 Don't worry this is super simple.
 Just clone the repo, and run the code!
 
+This example requires that you have golang installed, and you are on linux, most commands will work on windows, but CP might not.
+To do that on windows just copy the example config file to the same folder and rename it to hermes.conf
+
 ```
 git clone https://github.com/hhhug000/Hermes.git
 cd Hermes
